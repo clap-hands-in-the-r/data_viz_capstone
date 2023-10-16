@@ -1,0 +1,270 @@
+---
+title: "Practitioner number evolution in France accros years from 2012 to 2022"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(shiny)
+```
+
+
+Getting and gaining datas {data-orientation=rows}
+=======================================================================
+
+
+Column
+-----------------------------------------------------------------------
+
+### **Getting and gaining datas**
+
+Datas were extracted from a french official website https://drees.shinyapps.io/landing_page/  and precisely from a shiny app from a government agency https://drees.shinyapps.io/demographie-ps/
+
+The page provides datas about numbers of practitionners by "departement" which is a french territorial subdivision.
+
+The app provides datas from 2012 to 2022 but to get the detailed datas you need to process from year to year. It is not possible to load the raw datas. We tried to reach out the agency through the contact form but we had no answer. Even this way, loading time is really really long.
+
+So we got 10 .csv files downloading datas a year after another. We tried, but scraping the Shiny app didn't seem to be possible.
+
+Therefore we rebuilt the dataset with those 10 files with a little bit of data wrangling.
+We put this reconstituted dataset on a dropbox adress where it is accessible publicly :
+https://dl.dropboxusercontent.com/s/jm0krff08hlx5t8/my_clean_df.csv?dl=0
+
+The chunk on the right explains how we gathered the datas in a single data frame, and how we cleaned It.
+
+
+```{r global, include=FALSE}
+
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+# loading from the internet, but very long
+# my_clean_df <- read_csv(url("https://dl.dropboxusercontent.com/s/jm0krff08hlx5t8/my_clean_df.csv?dl=0"))
+
+
+setwd("C:/Users/maele/Documents/WORK/JHOPKINS/DataVizCapstone/my_capstone_project")
+#saveRDS(my_clean_df,"my_clean_df.rds")
+my_clean_df <- readRDS(file = "my_clean_df.rds")
+
+```
+
+### **Process gathering datas**
+
+
+```{r, echo = T, eval=FALSE}
+# "I downloaded my 10 csv. files (one by year) in a local folder"
+# 
+# # get the list of csv files in the current directory
+
+file_list <- list.files(pattern = "*.csv", full.names = F)
+
+# # here we created a function to download and concatenate all files
+
+my_func <- function(mon_fichier)
+{
+    read.csv(mon_fichier, fileEncoding = "Windows-1252") %>% mutate(annee = substr(mon_fichier,1,4))
+}
+
+# # here we create a function to trim leading spaces
+
+trim.leading <- function (x)  sub("^\\s+", "", x)
+
+ 
+# # here we gather all csv.files in one single data frame
+
+my_df <- file_list %>% lapply(my_func) %>% bind_rows
+
+ 
+# # here we convert the year in date format
+
+my_df$annee <- as.Date(paste(my_df$annee,1,1,sep="-"))
+
+ 
+# # set up readable headers for columns
+
+entete_col <- c("departement_inscription_praticien","sexe_praticien","specialite_praticien","nb_statut_indifferencie","nb_liberaux_exclusifs","nb_mixtes","nb_salaries_hospitaliers","nb_autres_salaries","annee")
+
+colnames(my_df) <- entete_col
+
+ 
+# # set to numeric columns 4 to 8
+
+my_df <- my_df %>% mutate(across(4:8,~ as.numeric(gsub(" ","",.x))))
+
+# # clean leading spaces from first three columns
+
+my_clean_df <- my_df %>% mutate(across(1:3,~ trim.leading(.x)))
+ 
+# # clean df from NA's
+my_clean_df <- my_clean_df %>% filter(is.na(nb_statut_indifferencie) == F )
+
+ 
+# # here we print the datas in a .csv files in the current directory
+# # it is the file we send on dropbox
+
+write.csv(my_clean_df,"my_clean_df.csv",row.names = F,quote=F)
+
+
+```
+
+
+Number of practitionner from 2012 to 2022 
+=======================================================================
+
+
+Column
+-----------------------------------------------------------------------
+
+### **First graph explained** {data-height=50}
+
+In this first visualization we display the number of practitioner whatever speciality or type of employment by year. It is a basic scatterplot with a tendency curve drawn with geom_smooth linear method.b
+Precision : We used Plotly package here.
+Thanks to Plotly package we can visualize the exact number of practitionners for a year when hovering a point
+
+### **First graph** {data-height=400}
+
+```{r}
+global_view_df <- my_clean_df %>% filter(specialite_praticien == "Ensemble" & departement_inscription_praticien== "Ensemble" &
+                                             sexe_praticien ==  "Ensemble")
+
+ggplotly(
+    ggplot(data=global_view_df,aes(x=annee,y=nb_statut_indifferencie)) + geom_point() + geom_smooth(method="lm") + labs(title = "Number of practitionner in France by year from 2012 to 2022",x = "Year", y = "Number of practitionners") + theme(plot.title = element_text(hjust = 0.5))
+    )
+
+```
+
+### **Second graph explained** {data-height=50}
+
+In this second vizualisation, we can see the same figures as in the previous one but with the y axis starting from zero. The goal is pointing out how we can be influenced on the reading of the sharpeness of the curve according the way we display the datas.
+
+
+### **Second graph** {data-height=400}
+
+```{r}
+
+ggplotly(
+    ggplot(data=global_view_df,aes(x=annee,y=nb_statut_indifferencie)) + geom_point() + expand_limits(y=0) + geom_smooth(method="lm") + labs(title = "Number of practitionner in France by year from 2012 to 2022 \ny axis starting from zero", x = "Year", y = "Number of practitionners") +  theme(plot.title = element_text(hjust = 0.5))
+)
+
+```
+
+
+
+Drilling into specialties
+=======================================================================
+
+Column {.tabset } 
+-----------------------------------------------------------------------
+
+
+### Page 1 : Overview {data-orientation=rows}
+
+
+The graph below shows the evolution of practitioners numbers across years. We used faceting in order to explore the specialties dimension.
+We elaborated the graphic with the code chunk below. But we had to save an image of it and to display it through an html embedded image cause the resolution of the image was not brilliant when directly rendered in the markdown document.
+
+
+
+```{r}
+
+# specialty_view_df <- my_clean_df %>% filter(specialite_praticien != "Ensemble") %>% 
+#     filter(sexe_praticien == "Ensemble") %>% 
+#     filter(departement_inscription_praticien == "Ensemble") %>% 
+#     select(c(3,4,9))
+# 
+# specialty_list <-  unique(specialty_view_df$specialite_praticien)
+# 
+# specialty_list_by_groups <- group(specialty_list,n=6,method="greedy")
+# colnames(specialty_list_by_groups) <- c("specialite_praticien","groupe")
+# 
+# specialty_view_df <- specialty_view_df %>% left_join(specialty_list_by_groups, by = "specialite_praticien")
+# 
+# p <- ggplot(specialty_view_df,aes(x=annee,y=nb_statut_indifferencie)) + geom_point() +
+#     geom_point(data = filter(specialty_view_df,nb_statut_indifferencie > 2000), color="red") +
+#     facet_wrap(~specialite_praticien,labeller = label_wrap_gen(multi_line = TRUE)) + theme(strip.text = element_text(size=8), plot.title = element_text(hjust = 0.5)) + theme(axis.text.x = element_text(angle = 45)) +labs(title = "Number of practitionner in France by year and specialty from 2012 to 2021 - y axis from zero \n pointing red when figure upper 2000", x = "Year", y = "Number of practitionners") 
+
+#setwd("C:/Users/maele/Documents/WORK/JHOPKINS/DataVizCapstone/week2")
+#ggsave("nb_practitionner_evol_through_years_and_through_specialties.png", plot = p)
+
+
+# in order to have a direct link to your dropbox content you need to replace "https://www.dropbox.com/s/extbu9w8qyete22/nb_practitionner_evol_through_years_and_through_specialties.png?dl=0"
+# in the url dropbox gives you with dl.dropboxusercontent.com
+
+#url <- "https://dl.dropboxusercontent.com/s/extbu9w8qyete22/nb_practitionner_evol_through_years_and_through_specialties.png"
+
+# an help at this link :
+#https://stackoverflow.com/questions/28912868/how-to-insert-image-from-url-in-markdown
+
+
+```
+
+<img src="https://dl.dropboxusercontent.com/s/extbu9w8qyete22/nb_practitionner_evol_through_years_and_through_specialties.png"/>
+
+### Page 2 : Drilling {data-height=900}
+
+
+
+```{r}
+# restraining data field to that wish will be useful for the purpose
+df_sp <- my_clean_df %>% filter(sexe_praticien=="Ensemble" & specialite_praticien!="Ensemble" & departement_inscription_praticien=="Ensemble") %>% select(-c(5:8))
+
+sp_list <- sort(unique(df_sp$specialite_praticien))
+
+shinyApp(
+ui <- fluidPage(
+
+         tabPanel("My first page",
+               
+    # Application title
+            titlePanel("Number of practitioners by specialty from 2012 to 2022"),
+        
+            # Sidebar with a slider input for number of bins 
+            sidebarLayout(
+                sidebarPanel(
+                    selectInput("sel_specialty",
+                                "Select specialty:",
+                                choices = sp_list,
+                                selected = NULL,
+                                multiple = FALSE)
+                ),
+        
+                # Show a plot of the generated distribution
+                mainPanel(
+                   plotOutput("nb_pract_by_sp_over_year")
+                )
+            )
+
+            
+            
+                )
+            ),
+
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+
+    output$nb_pract_by_sp_over_year <- renderPlot({
+        # generate data frame based on input$sel_specialty from ui.R
+        df_sp_sel <- df_sp %>% filter(specialite_praticien==input$sel_specialty)
+        my_title <- paste("Number of practitionner in France by year from 2012 to 2022","\n for selected specialty :",input$sel_specialty)
+
+        # draw the linegraph for the specified specialty
+        ggplot(
+            df_sp_sel,
+            aes(x = annee, y = nb_statut_indifferencie)
+        ) + geom_line() + geom_smooth(method = "lm") + labs(title = my_title, x = "Year", y = "Number of practitionners") + theme(plot.title = element_text(hjust = 0.5))
+        
+        
+    })
+} 
+    
+             )
+
+
+
